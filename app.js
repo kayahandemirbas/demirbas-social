@@ -467,7 +467,6 @@ function renderAll() {
   $("followingHint").textContent = store.accountUsername ? `@${store.accountUsername}` : (hasData ? "Kaydedilen snapshot" : "Henüz tarama yok");
   $("unfollowersHint").textContent = `${store.snapshots.length} snapshot kayıtlı`;
   $("snapshotTag").textContent = `V2.0 · ${store.snapshots.length} SNAPSHOT`;
-  updateExploreMetrics(tabs);
 
   $("notbackTabCount").textContent = tabs.notback.length;
   $("unfollowersTabCount").textContent = tabs.unfollowers.length;

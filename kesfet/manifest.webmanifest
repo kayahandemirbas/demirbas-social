@@ -1,0 +1,19 @@
+{
+  "name": "DEMİRBAŞ KEŞFET — Algoritma Motoru",
+  "short_name": "D KEŞFET",
+  "description": "Takipçi/Takip Otorite Simülatörü, Ağırlıklı Keşfet Skoru (ER%) ve Prime-Time Reels Planlayıcı",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0c0d10",
+  "theme_color": "#111216",
+  "lang": "tr",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

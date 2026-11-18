@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="D KEŞFET">
+  <meta name="theme-color" content="#111216">
+  <meta name="description" content="DEMİRBAŞ KEŞFET — Takipçi/Takip Otorite Oranı, Organik Keşfet Skoru (ER%) ve Prime-Time Reels Planlayıcı">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+  <title>DEMİRBAŞ KEŞFET — Algoritma Motoru</title>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">K</span>
+      <div>
+        <strong>DEMİRBAŞ <em>KEŞFET</em></strong>
+        <small>ALGORITHM &amp; REELS ENGINE</small>
+      </div>
+    </div>
+    <div class="countdown-pill" id="nextSlotPill">⏱ Prime-Time hesaplanıyor…</div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="eyebrow">BAĞIMSIZ KEŞFET &amp; ALGORİTMA PANELİ</p>
+      <h1>Algoritmayı çöz,<br><span>Keşfet'e yerleş.</span></h1>
+      <p class="sub">
+        Takipçi/Takip otorite oranını simüle et, kaydetme ve paylaşım ağırlıklı gerçek Keşfet Etkileşim Skorunu (ER%) ölç ve güne özel Prime-Time Reels saatini yakala.
+      </p>
+    </section>
+
+    <div class="grid-2">
+      <!-- 1. MODÜL: TAKİPÇİ / TAKİP OTORİTE ORANI SİMÜLATÖRÜ -->
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">MODÜL 01 · HESAP OTORİTESİ</p>
+            <h2>Takipçi / Takip Otorite Oranı</h2>
+          </div>
+          <button class="copy-btn" id="syncBridgeBtn" type="button">↻ Canlıdan Çek</button>
+        </div>
+
+        <div class="kpi-row">
+          <div class="kpi">
+            <span>MEVCUT ORAN</span>
+            <strong id="curRatioText">1.07x</strong>
+            <small id="curTierText">Dengeli Hesap</small>
+          </div>
+          <div class="kpi highlight">
+            <span>TEMİZLİK SONRASI</span>
+            <strong id="targetRatioText">1.48x</strong>
+            <small id="targetTierText">Yükselen Üretici</small>
+          </div>
+          <div class="kpi">
+            <span>OTORİTE ARTIŞI</span>
+            <strong id="gainPctText" style="color:var(--green);">+%38</strong>
+            <small id="cleanRemainText">226 takip kalır</small>
+          </div>
+        </div>
+
+        <div class="field-grid">
+          <div>
+            <label class="lbl" for="inpFollowers">Takipçi Sayısı</label>
+            <input class="inp" id="inpFollowers" type="number" min="1" value="334">
+          </div>
+          <div>
+            <label class="lbl" for="inpFollowing">Takip Edilen</label>
+            <input class="inp" id="inpFollowing" type="number" min="1" value="312">
+          </div>
+          <div>
+            <label class="lbl" for="inpNonBack">Geri Dönmeyen</label>
+            <input class="inp" id="inpNonBack" type="number" min="0" value="86">
+          </div>
+        </div>
+
+        <div class="slider-box">
+          <div style="display:flex;justify-content:space-between;font-size:12px;">
+            <span>Simülasyon: Çıkarılacak Kişi Sayısı</span>
+            <strong id="sliderValLabel" style="color:var(--orange2);">86 kişi</strong>
+          </div>
+          <input type="range" id="unfollowSlider" min="0" max="312" value="86">
+        </div>
+
+        <div class="meter-wrap">
+          <div class="meter-labels">
+            <span>Algoritma Otorite Seviyesi</span>
+            <span id="meterRightLabel">Hedef: 1.50x Creator Eşiği</span>
+          </div>
+          <div class="meter-track">
+            <div class="meter-fill" id="ratioMeterFill" style="width:74%;"></div>
+          </div>
+        </div>
+
+        <div class="advice-card" id="ratioAdvice"></div>
+      </section>
+
+      <!-- 2. MODÜL: AĞIRLIKLI ORGANİK KEŞFET SKORU (ER%) -->
+      <section class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">MODÜL 02 · VİRAL HIZ MOTORU</p>
+            <h2>Organik Keşfet Etkileşim Skoru (ER%)</h2>
+          </div>
+          <span class="badge green" id="erBadge">ANALİZ HAZIR</span>
+        </div>
+
+        <div class="score-dial">
+          <div class="score-circle" id="scoreCircle">
+            <div class="score-inner" id="viralScoreNum">78</div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--muted);font-weight:700;">KEŞFET POTANSİYEL SKORU (0–100)</div>
+            <div style="font-size:21px;font-weight:800;margin:3px 0;" id="erHeadline">ER: %19.5 · 🔥 Keşfet Adayı</div>
+            <div style="font-size:11.5px;color:#94a3b8;" id="weightedBreakdown">Kaydetme (4x) ve Paylaşım (5x) katsayılı hesap</div>
+          </div>
+        </div>
+
+        <div class="field-grid">
+          <div>
+            <label class="lbl" for="inpPlays">Ort. Reels İzlenme</label>
+            <input class="inp" id="inpPlays" type="number" min="0" value="850">
+          </div>
+          <div>
+            <label class="lbl" for="inpLikes">Ort. Beğeni (1x)</label>
+            <input class="inp" id="inpLikes" type="number" min="0" value="42">
+          </div>
+          <div>
+            <label class="lbl" for="inpComments">Ort. Yorum (2.5x)</label>
+            <input class="inp" id="inpComments" type="number" min="0" value="7">
+          </div>
+          <div>
+            <label class="lbl" for="inpSaves">Kaydetme (4x)</label>
+            <input class="inp" id="inpSaves" type="number" min="0" value="10">
+          </div>
+          <div>
+            <label class="lbl" for="inpShares">DM Paylaşım (5x)</label>
+            <input class="inp" id="inpShares" type="number" min="0" value="6">
+          </div>
+        </div>
+
+        <div class="advice-card" id="erAdvice"></div>
+      </section>
+    </div>
+
+    <!-- 3. MODÜL: GÜNE GÖRE PRIME-TIME REELS PAYLAŞIM SAATİ ÖNERİCİSİ -->
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">MODÜL 03 · ZAMANLAMA ZEKA MOTORU</p>
+          <h2>Güne Göre Prime-Time Reels Paylaşım Saatleri</h2>
+        </div>
+        <span class="badge" id="todayPrimeBadge">BUGÜN: —</span>
+      </div>
+
+      <div class="niche-tabs" id="nicheTabs">
+        <button class="niche-btn active" data-niche="lifestyle" type="button">✨ Yaşam / Vlog / Müzik</button>
+        <button class="niche-btn" data-niche="creator" type="button">🎬 İçerik Üretici / Mizah</button>
+        <button class="niche-btn" data-niche="tech" type="button">💻 Teknoloji / Eğitim</button>
+        <button class="niche-btn" data-niche="business" type="button">💼 İş / Girişim / Marka</button>
+      </div>
+
+      <div class="week-grid" id="weekGrid"></div>
+
+      <div class="advice-card" id="timingAdvice"></div>
+    </section>
+
+    <!-- 4. MODÜL: İLK 3 SANİYE KANCA (HOOK) & KEŞFET KONTROL LİSTESİ -->
+    <section class="panel">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">MODÜL 04 · İZLENME TUTMA (RETENTION) ARAÇLARI</p>
+          <h2>İlk 3 Saniye Kanca Cümleleri &amp; Paylaşım Öncesi Kontrol</h2>
+        </div>
+        <button class="copy-btn" id="copyHashtagsBtn" type="button"># Dengeli Hashtag Seti Kopyala</button>
+      </div>
+
+      <div class="hook-list" id="hookList"></div>
+
+      <p class="eyebrow" style="margin-top:20px;">REELS YÜKLEMEDEN ÖNCE 6 ALTIN KURAL</p>
+      <div class="checklist" id="prePostChecklist">
+        <label class="chk-row"><input type="checkbox" checked> İlk 1.5 saniyede ekranda büyük başlık / hareket var</label>
+        <label class="chk-row"><input type="checkbox" checked> Filigransız (TikTok/CapCut logosuz) 1080p dikey çıktı</label>
+        <label class="chk-row"><input type="checkbox"> Videoda "Kaydet lazım olur" veya soru tetikleyicisi var</label>
+        <label class="chk-row"><input type="checkbox"> Kapak görseli 4:5 profil ızgarasında ortalı duruyor</label>
+        <label class="chk-row"><input type="checkbox"> Paylaşım sonrası ilk 15 dk yorumlara anında yanıt hazır</label>
+        <label class="chk-row"><input type="checkbox"> Prime-Time saatinden 10 dk önce Story ısıtması atıldı</label>
+      </div>
+    </section>
+  </main>
+
+  <footer>DEMİRBAŞ KEŞFET <span>·</span> Organik Algoritma &amp; Reels Büyüme Merkezi</footer>
+
+  <script src="app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
+    }
+  </script>
+</body>
+</html>

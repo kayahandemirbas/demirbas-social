@@ -1,4 +1,4 @@
-const CACHE = "demirbas-social-v3";
+const CACHE = "demirbas-social-v4";
 const ASSETS = [
   "./",
   "./index.html",

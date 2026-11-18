@@ -1,0 +1,12 @@
+{
+  "name": "DEMİRBAŞ SOCIAL",
+  "short_name": "D SOCIAL",
+  "description": "Kişisel sosyal medya analiz merkezi",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0d0e10",
+  "theme_color": "#111111",
+  "lang": "tr",
+  "icons": [{"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}

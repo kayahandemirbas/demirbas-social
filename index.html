@@ -6,13 +6,13 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="D SOCIAL">
-  <meta name="theme-color" content="#111111">
-  <meta name="description" content="DEMİRBAŞ SOCIAL — kişisel takipçi analizi, snapshot geçmişi ve güvenli takipten çıkarma merkezi">
+  <meta name="theme-color" content="#0d0e10">
+  <meta name="description" content="DEMİRBAŞ SOCIAL V2.6 — GraphQL motorlu kişisel takipçi analizi, snapshot geçmişi, hız ayarları ve güvenli takipten çıkarma merkezi">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon.svg">
   <link rel="stylesheet" href="styles.css">
-  <title>DEMİRBAŞ SOCIAL</title>
+  <title>DEMİRBAŞ SOCIAL · V2.6</title>
 </head>
 <body>
   <header class="topbar">
@@ -20,10 +20,12 @@
       <span class="brand-mark">D</span>
       <div>
         <strong>DEMİRBAŞ <em>SOCIAL</em></strong>
-        <small>SOCIAL INTELLIGENCE · V2.0</small>
+        <small>GRAPHQL ENGINE · V2.6</small>
       </div>
     </div>
     <div class="top-right">
+      <a class="kesfet-pill" href="./kesfet/">🔥 Keşfet Motoru ↗</a>
+      <button class="icon-pill" id="openSettingsBtn" type="button" title="Hız Ayarları">⚙ Hız Ayarları</button>
       <button class="local-pill" id="sessionPillBtn" type="button">
         <i></i> <span id="sessionPillText">Cihazında çalışır</span>
       </button>
@@ -32,16 +34,17 @@
 
   <main>
     <section class="hero">
-      <p class="eyebrow">KİŞİSEL ANALİZ &amp; GÜVENLİ UNFOLLOW MERKEZİ</p>
+      <p class="eyebrow">GRAPHQL MOTORU · KİŞİSEL ANALİZ &amp; GÜVENLİ UNFOLLOW MERKEZİ</p>
       <h1>Sosyal çevreni<br><span>veriyle yönet.</span></h1>
-      <p class="sub">Instagram ZIP/JSON arşivini yükle veya <strong>Yöntem 2 (sessionid)</strong> ile canlı tara; takipten çıkanları yakala, ortak paylaşımları koru ve güvenle temizle.</p>
+      <p class="sub">Instagram ZIP/JSON arşivini yükle, <strong>Yöntem 2 (sessionid)</strong> ile 200'lü hızda canlı tara veya <strong>DEMİRBAŞ Yüzen Panel</strong>'i doğrudan <code>instagram.com</code> üzerinde aç.</p>
       <div class="actions">
         <label class="primary-btn" for="fileInput">📂 ZIP / JSON Yükle <b>＋</b></label>
         <input id="fileInput" type="file" accept=".zip,.json,.html,.htm,.csv,.txt" multiple hidden>
-        <button class="session-btn" id="openMethod2Btn" type="button">🔑 Yöntem 2: Oturum (sessionid) &amp; Canlı Çekim</button>
+        <button class="session-btn" id="openMethod2Btn" type="button">🔑 Yöntem 2: Oturum &amp; Canlı Çekim</button>
+        <button class="panel-copy-btn" id="openFloatingPanelModalBtn" type="button">⚡ instagram.com Yüzen Panel (v2.6)</button>
         <button class="secondary-btn" id="demoBtn" type="button">Demo veriyi dene</button>
       </div>
-      <p class="privacy-note">🔒 Tüm snapshot geçmişi ve koruma listen (Whitelist) yalnızca kendi cihazında saklanır; hiçbir dış sunucuya gönderilmez.</p>
+      <p class="privacy-note">🔒 Tüm snapshot geçmişi, gizlenenler ve koruma listen (Whitelist) yalnızca kendi cihazında saklanır.</p>
     </section>
 
     <div class="status-banner" id="statusBanner">
@@ -49,16 +52,26 @@
       <button class="mini-btn" type="button" onclick="document.getElementById('statusBanner').style.display='none'">✕</button>
     </div>
 
+    <!-- GraphQL Kuyruk ve Tamamlandı İlerleme Kartı -->
     <div class="queue-card" id="queueCard">
       <div class="queue-head">
-        <span class="queue-title" id="queueTitle">⏱ Korumalı Otomatik Kuyruk</span>
-        <div style="display:flex;gap:6px;">
+        <strong class="queue-big-title" id="queueTitle">Takibi bırakılıyor…</strong>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
           <button class="mini-btn" id="qPauseBtn" type="button">Duraklat</button>
           <button class="mini-btn green" id="qResumeBtn" type="button">Devam Et</button>
-          <button class="mini-btn" id="qClearBtn" type="button">Temizle</button>
+          <button class="mini-btn orange" id="qClearBtn" type="button">Sonuçlara dön</button>
         </div>
       </div>
+      <div class="progress-track">
+        <div class="progress-fill" id="queueProgressBar" style="width:0%"></div>
+      </div>
+      <div class="queue-metrics" id="queueMetricsText">0 başarılı, 0 başarısız</div>
       <div class="queue-sub" id="queueSubText">Hazırlanıyor…</div>
+      <div class="queue-current-pill" id="queueCurrentPill" style="display:none;">
+        <span>Şu an</span>
+        <strong id="queueCurrentUser">@kullanici</strong>
+        <i class="ok-badge" id="queueCurrentBadge">✓</i>
+      </div>
     </div>
 
     <section class="stats">
@@ -75,7 +88,7 @@
       <article class="stat-card accent-card" data-jump="notback">
         <span>GERİ TAKİP ETMEYEN</span>
         <strong id="notFollowingBack">—</strong>
-        <small>Takip ettiklerin arasından</small>
+        <small id="notBackFilteredHint">Takip ettiklerin arasından</small>
       </article>
       <article class="stat-card alert-card" data-jump="unfollowers">
         <span>BİZİ UNFOLLOW YAPAN</span>
@@ -87,10 +100,13 @@
     <section class="panel">
       <div class="section-head">
         <div>
-          <p class="eyebrow">ANALİZ &amp; ÇOKLU SEÇİM</p>
+          <p class="eyebrow">ANALİZ · FİLTRE &amp; ÇOKLU SEÇİM</p>
           <h2>Takipçi karşılaştırması ve koruma listesi</h2>
         </div>
-        <span class="tag" id="snapshotTag">V2.0 · SNAPSHOT HAZIR</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="mini-btn" id="panelSettingsBtn" type="button">⚙ Hız Ayarları</button>
+          <span class="tag" id="snapshotTag">V2.6 · GRAPHQL</span>
+        </div>
       </div>
 
       <div class="tabs" role="tablist">
@@ -103,15 +119,24 @@
       </div>
 
       <div class="list-toolbar">
-        <input id="searchInput" type="search" placeholder="Kullanıcı adı veya tam ad ara…">
-        <button id="exportBtn" class="mini-btn" type="button">CSV dışa aktar ↓</button>
+        <input id="searchInput" type="search" placeholder="İsim veya kullanıcı adı ara…">
+        <button id="copyVisibleBtn" class="mini-btn" type="button">Tümünü kopyala</button>
+        <button id="exportBtn" class="mini-btn" type="button">CSV ↓</button>
+      </div>
+
+      <!-- Onaylı / Gizli / Profil resmi yok / Gizlenenler Filtre Çipleri -->
+      <div class="filter-chips" id="filterChips">
+        <button class="chip active" data-chip="verified" type="button">✓ Onaylı</button>
+        <button class="chip active" data-chip="private" type="button">✓ Gizli</button>
+        <button class="chip active" data-chip="noAvatar" type="button">✓ Profil resmi yok</button>
+        <button class="chip" data-chip="showHidden" id="showHiddenChip" type="button">Gizlenenler (0)</button>
       </div>
 
       <div class="bulk-bar">
-        <button class="mini-btn orange" id="selectAllBtn" type="button">☑ Tümünü Seç (Korumalılar Hariç)</button>
+        <button class="mini-btn orange" id="selectAllBtn" type="button">☑ Tümünü seç (Korumalılar hariç)</button>
         <button class="mini-btn green" id="protectCollabsBtn" type="button" style="display:none;">🛡 Tüm Ortak Paylaşımları Koru</button>
         <button class="mini-btn green" id="protectSelectedBtn" type="button" style="display:none;">🛡 Seçilenleri Korumaya Al</button>
-        <button class="mini-btn" id="clearSelectBtn" type="button" style="display:none;">Seçimi Temizle</button>
+        <button class="mini-btn" id="clearSelectBtn" type="button" style="display:none;">Seçimi temizle</button>
       </div>
 
       <div id="resultList" class="result-list">
@@ -123,17 +148,17 @@
       </div>
 
       <p class="footnote">
-        💡 İpucu: Korumaya aldığın (🛡 Whitelist) hesaplar çoklu seçimde ve otomatik takipten çıkarma kuyruğunda her zaman hariç tutulur.
+        💡 İpucu: Üstteki <strong>Onaylı / Gizli / Profil resmi yok</strong> çiplerine dokunarak listeyi anında süzebilir, <strong>Gizle</strong> ile istediğin hesabı listeden saklayabilir veya <strong>+ Koru</strong> ile Whitelist'e alabilirsin.
       </p>
     </section>
 
     <section class="howto">
-      <p class="eyebrow">2 ÇALIŞMA YÖNTEMİ</p>
-      <h2>Verini nasıl çekebilirsin?</h2>
+      <p class="eyebrow">3 ÇALIŞMA YÖNTEMİ · V2.6</p>
+      <h2>Verini nasıl çekebilir ve temizleyebilirsin?</h2>
       <ol>
-        <li><strong>Yöntem 1 (ZIP / JSON Arşivi — Sıfır Risk):</strong> Instagram → Hesaplar Merkezi → Bilgilerini indir → Takipçiler ve takip edilenler (JSON) arşivini indirip doğrudan <code>.zip</code> veya <code>.json</code> olarak yukarıdan seç.</li>
-        <li><strong>Yöntem 2 (Oturum / sessionid ile Canlı Tarama &amp; Otomatik Kuyruk):</strong> <em>Yöntem 2</em> butonundan yerel köprüye <code>sessionid</code> bağlayarak veya tek tıkla tarayıcı betiğini kullanarak takipçileri, ortak gönderileri (collab/etiket) 1.5–3.5 sn korumalı gecikmeyle otomatik çek.</li>
-        <li><strong>Güvenli Unfollow:</strong> Listeden kişileri seçip <strong>Mod 1 (25–55 sn Korumalı Kuyruk, max 20/saat)</strong> veya <strong>Mod 2 (Instagram Uygulamasında Sırayla Hızlı Geçiş)</strong> ile temizle.</li>
+        <li><strong>Yöntem 1 (ZIP / JSON Arşivi — Sıfır Risk):</strong> Instagram → Hesaplar Merkezi → Bilgilerini indir → Takipçiler ve takip edilenler (JSON) arşivini indirip doğrudan yukarıdan seç.</li>
+        <li><strong>Yöntem 2 (sessionid + Yerel GraphQL Köprü):</strong> <code>Baslat.command</code> açıkken <code>sessionid</code> ve <code>csrftoken</code> bağlayarak sayfa başına 200 kullanıcı hızıyla canlı tarama ve <code>usePolarisUnfollowMutation</code> GraphQL motoruyla güvenli takipten çıkarma yap.</li>
+        <li><strong>Yöntem 3 (DEMİRBAŞ Yüzen Panel v2.6 — instagram.com Üzerinde):</strong> Bilgisayarda <code>instagram.com</code> açıkken konsola (ilk seferde <code>allow pasting</code> yazıp) tek tıkla kopyaladığın Yüzen Panel kodunu yapıştırarak sayfa içinden yönet.</li>
       </ol>
     </section>
   </main>
@@ -141,13 +166,16 @@
   <!-- Sabit Alt Seçmeli Unfollow Çubuğu -->
   <div class="unfollow-bar" id="unfollowBar">
     <div class="unfollow-top">
-      <strong id="selectedCountLabel">0 hesap seçildi</strong>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <strong id="selectedCountLabel">0 seçili</strong>
+        <button class="mini-btn" id="copySelectedBtn" type="button" style="padding:4px 9px;">Seçilenleri kopyala</button>
+      </div>
       <span style="color:#6ee7b7;font-size:11px;">🛡 Korumalılar otomatik hariç</span>
     </div>
     <div class="mode-grid">
       <button class="mode-btn m1" id="mode1Btn" type="button">
-        <strong>Mod 1: Korumalı Otomatik Kuyruk</strong>
-        <small>25–55 sn rastgele bekleme · Max 20/saat</small>
+        <strong>Mod 1: GraphQL Takibi Bırak</strong>
+        <small id="mode1TimingHint">4–4.8 sn gecikme · Her 5 işlemde 5 dk mola</small>
       </button>
       <button class="mode-btn m2" id="mode2Btn" type="button">
         <strong>Mod 2: Yarı Otomatik Hızlı Geçiş</strong>
@@ -156,12 +184,101 @@
     </div>
   </div>
 
+  <!-- Hız Ayarları Modalı (v2.6) -->
+  <div class="modal-backdrop" id="settingsModal">
+    <div class="modal-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+        <div>
+          <strong style="font-size:19px;display:block;">Hız ayarları</strong>
+          <p style="font-size:12px;color:#9ca3af;margin:6px 0 0;line-height:1.45;">
+            Düşük gecikmeler Instagram'ın hesabını kısıtlamasına neden olabilir. Yavaş tut.
+          </p>
+        </div>
+        <button class="mini-btn" type="button" id="closeSettingsTopBtn">✕</button>
+      </div>
+
+      <div class="settings-grid">
+        <div class="setting-row">
+          <span>Min tarama gecikmesi (ms)</span>
+          <input type="number" id="st_scanDelayMin" step="100" min="200">
+        </div>
+        <div class="setting-row">
+          <span>Maks tarama gecikmesi (ms)</span>
+          <input type="number" id="st_scanDelayMax" step="100" min="200">
+        </div>
+        <div class="setting-row">
+          <span>Her N sayfada uzun mola</span>
+          <input type="number" id="st_scanPauseEveryPages" step="1" min="0">
+        </div>
+        <div class="setting-row">
+          <span>Uzun mola süresi (ms)</span>
+          <input type="number" id="st_scanPauseMs" step="1000" min="0">
+        </div>
+        <div class="setting-row">
+          <span>Sayfa başına istenen kullanıcı</span>
+          <input type="number" id="st_usersPerRequest" step="10" min="12" max="200">
+        </div>
+        <div class="setting-row">
+          <span>Min takip bırakma gecikmesi (ms)</span>
+          <input type="number" id="st_unfollowDelayMin" step="200" min="1000">
+        </div>
+        <div class="setting-row">
+          <span>Maks takip bırakma gecikmesi (ms)</span>
+          <input type="number" id="st_unfollowDelayMax" step="200" min="1000">
+        </div>
+        <div class="setting-row">
+          <span>Her N takip bırakmada mola</span>
+          <input type="number" id="st_unfollowPauseEvery" step="1" min="0">
+        </div>
+        <div class="setting-row">
+          <span>Mola süresi (ms)</span>
+          <input type="number" id="st_unfollowPauseMs" step="10000" min="0">
+        </div>
+      </div>
+
+      <div class="settings-footer">
+        <button class="secondary-btn" id="resetSettingsBtn" type="button">Varsayılana dön</button>
+        <div style="display:flex;gap:8px;">
+          <button class="secondary-btn" id="cancelSettingsBtn" type="button">İptal</button>
+          <button class="primary-btn" id="saveSettingsBtn" type="button">Kaydet</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DEMİRBAŞ Yüzen Panel (instagram.com) Modalı -->
+  <div class="modal-backdrop" id="floatingPanelModal">
+    <div class="modal-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <p class="eyebrow" style="margin-bottom:4px;">DEMİRBAŞ SOCIAL · V2.6 YÜZEN PANEL</p>
+          <strong style="font-size:17px;">instagram.com Üzerinde Yüzen Paneli Aç</strong>
+        </div>
+        <button class="mini-btn" type="button" id="closeFloatingPanelModalBtn">Kapat</button>
+      </div>
+
+      <div class="modal-box">
+        <ol style="margin:0;padding-left:18px;font-size:12.5px;color:#d1d5db;line-height:1.8;">
+          <li>Bilgisayarda <strong><a href="https://www.instagram.com/" target="_blank" rel="noopener" style="color:var(--orange2);">instagram.com</a></strong> sekmesini aç ve sağ tık → <strong>İncele (Inspect)</strong> → üstten <strong>Console</strong> sekmesine geç.</li>
+          <li>Chrome ilk kez yapıştırmada uyarı verirse konsola küçük harflerle <code class="inline-code">allow pasting</code> yazıp Enter'a bas.</li>
+          <li>Aşağıdaki butonla <strong>DEMİRBAŞ SOCIAL v2.6 Yüzen Panel</strong> kodunu kopyalayıp Console'a yapıştır ve Enter'a bas!</li>
+        </ol>
+        <button class="primary-btn" id="copyFullFloatingPanelBtn" type="button" style="width:100%;justify-content:center;margin-top:12px;padding:13px;">
+          📋 DEMİRBAŞ Yüzen Panel Kodunu Kopyala (v2.6)
+        </button>
+        <p style="font-size:11px;color:#9ca3af;margin:10px 0 0;line-height:1.5;">
+          💡 Yüzen panelin sağ üstündeki <strong>⇄</strong> butonuna bastığında tarama verisi panoya kopyalanır; aşağıdaki <strong>Yöntem 2 → Panodan Veriyi Aktar</strong> ile buraya da tek tıkla senkronize edebilirsin.
+        </p>
+      </div>
+    </div>
+  </div>
+
   <!-- Yöntem 2: Oturum (sessionid) & Canlı Çekim Modalı -->
   <div class="modal-backdrop" id="method2Modal">
     <div class="modal-card">
       <div style="display:flex;justify-content:space-between;align-items:center;">
         <div>
-          <p class="eyebrow" style="margin-bottom:4px;">YÖNTEM 2 · CANLI VERİ &amp; KUYRUK</p>
+          <p class="eyebrow" style="margin-bottom:4px;">YÖNTEM 2 · GRAPHQL CANLI VERİ &amp; KUYRUK</p>
           <strong style="font-size:17px;">Oturum (sessionid) &amp; Otomatik Tarama</strong>
         </div>
         <button class="mini-btn" type="button" id="closeMethod2Btn">Kapat</button>
@@ -169,32 +286,32 @@
 
       <!-- Seçenek A: sessionid + Yerel Köprü -->
       <div class="modal-box">
-        <strong style="font-size:13px;color:var(--orange2);">🔑 A) sessionid + Yerel Köprü Sunucusu (Tam Otomatik)</strong>
+        <strong style="font-size:13px;color:var(--orange2);">🔑 A) sessionid + Yerel Köprü Sunucusu (GraphQL Tam Otomatik)</strong>
         <p style="font-size:11.5px;color:#9ca3af;margin:6px 0 8px;line-height:1.5;">
-          Masaüstündeki <code>anti/demirbas-social/yerel-kopru/Baslat.command</code> açıkken tarayıcı çerezindeki <code>sessionid</code> ve <code>csrftoken</code> ile hem 1.5–3.5 sn korumalı canlı tarama hem de Mod 1 otomatik unfollow kuyruğu doğrudan çalışır.
+          Masaüstündeki <code>anti/demirbas-social/Baslat.command</code> açıkken <code>sessionid</code> ve <code>csrftoken</code> ile hem 200'lü hızlı canlı tarama hem de <code>usePolarisUnfollowMutation</code> GraphQL takipten çıkarma doğrudan çalışır. Oturum zaten kayıtlıysa kutuları boş bırakıp doğrudan <strong>Yeniden Canlı Tara</strong>'ya basabilirsin.
         </p>
         <label class="field-label">Yerel Köprü Adresi (Mac veya HTTPS Tünel)</label>
         <input class="field-input" id="bridgeUrlInput" placeholder="http://127.0.0.1:8090">
-        <label class="field-label">Instagram sessionid (veya tam Cookie satırı)</label>
+        <label class="field-label">Instagram sessionid (Kayıtlı oturumu kullanmak için boş bırakabilirsin)</label>
         <input class="field-input" id="sessionIdInput" type="password" placeholder="sessionid değerini yapıştır…">
-        <label class="field-label">csrftoken (Mod 1 otomatik takipten çıkarma için)</label>
+        <label class="field-label">csrftoken</label>
         <input class="field-input" id="csrfInput" placeholder="csrftoken değeri…">
         <button class="primary-btn" style="width:100%;justify-content:center;margin-top:12px;" id="saveAndLiveScanBtn" type="button">
-          🚀 Kaydet ve Canlı Taramayı Başlat
+          🚀 Kaydet / Yeniden Canlı Taramayı Başlat
         </button>
       </div>
 
-      <!-- Seçenek B: Köprüsüz Tarayıcıdan Canlı Çekim -->
+      <!-- Seçenek B: Köprüsüz Tarayıcıdan Canlı Çekim / Yüzen Panel Aktarımı -->
       <div class="modal-box">
-        <strong style="font-size:13px;color:#6ee7b7;">⚡ B) Köprüsüz Canlı Çekim (instagram.com Açıkken Tek Tık)</strong>
+        <strong style="font-size:13px;color:#6ee7b7;">⚡ B) Yüzen Panel &amp; Köprüsüz Canlı Çekim Aktarımı</strong>
         <p style="font-size:11.5px;color:#9ca3af;margin:6px 0 10px;line-height:1.5;">
-          Bilgisayar veya Safari'de <code>instagram.com</code> açıkken 1. butona basıp tarama kodunu kopyala ve konsolda çalıştır (1.5–3.5 sn korumalı okur ve veriyi panoya kopyalar). Ardından 2. butonla buraya aktar:
+          <code>instagram.com</code> Console'unda (ilk seferde <code>allow pasting</code> yazarak) Yüzen Panel veya Tarama Kodunu çalıştırıp veriyi tek tıkla buraya aktar:
         </p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-          <button class="mini-btn orange" id="copyScannerScriptBtn" type="button" style="padding:11px 8px;">1. Canlı Tarama Kodunu Kopyala</button>
+          <button class="mini-btn orange" id="copyScannerScriptBtn" type="button" style="padding:11px 8px;">1. Yüzen Panel Kodunu Kopyala</button>
           <button class="mini-btn green" id="pasteLiveJsonBtn" type="button" style="padding:11px 8px;">2. 📋 Panodan Veriyi Aktar</button>
         </div>
-        <textarea class="field-input" id="manualJsonPaste" rows="2" placeholder="Veya kopyalanan canlı JSON çıktısını buraya yapıştır…" style="margin-top:8px;"></textarea>
+        <textarea class="field-input" id="manualJsonPaste" rows="2" placeholder="Veya kopyalanan JSON çıktısını / kullanıcı adı listesini buraya yapıştır…" style="margin-top:8px;"></textarea>
         <button class="secondary-btn" style="width:100%;justify-content:center;margin-top:8px;padding:10px;" id="importManualJsonBtn" type="button">Yapıştırılan Veriyi Analiz Et</button>
       </div>
     </div>
@@ -225,15 +342,15 @@
     </div>
   </div>
 
-  <!-- Mod 1 Köprüsüz Kuyruk Kodu Modalı -->
+  <!-- Mod 1 Köprüsüz GraphQL Kuyruk Kodu Modalı -->
   <div class="modal-backdrop" id="scriptQueueModal">
     <div class="modal-card">
       <div style="display:flex;justify-content:space-between;align-items:center;">
-        <strong style="font-size:15px;">⏱ Mod 1: Korumalı Otomatik Kuyruk Kodu</strong>
+        <strong style="font-size:15px;">⏱ Mod 1: GraphQL Otomatik Kuyruk Kodu</strong>
         <button class="mini-btn" type="button" onclick="document.getElementById('scriptQueueModal').style.display='none'">Kapat</button>
       </div>
       <p style="font-size:12px;color:#9ca3af;margin:8px 0;line-height:1.5;">
-        Yerel köprü bağlı olmadığı için seçtiğin <strong id="scriptQueueCount" style="color:var(--orange2);">0</strong> hesaba özel (25–55 sn rastgele gecikmeli, saatlik max 20 sınırlı ve uyarıda anında duran) kuyruk kodu üretildi:
+        Yerel köprü bağlı olmadığı için seçtiğin <strong id="scriptQueueCount" style="color:var(--orange2);">0</strong> hesaba özel (<code>usePolarisUnfollowMutation</code> GraphQL motorlu ve Hız Ayarlarınla uyumlu) kuyruk kodu üretildi. <code>instagram.com</code> Console'una yapıştırıp çalıştır:
       </p>
       <textarea class="field-input" id="generatedQueueScript" rows="5" readonly style="font-family:monospace;font-size:11px;"></textarea>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
@@ -243,12 +360,12 @@
     </div>
   </div>
 
-  <footer>DEMİRBAŞ SOCIAL <span>·</span> Kişisel veri kontrolü sende.</footer>
+  <footer>DEMİRBAŞ SOCIAL V2.6 <span>·</span> GraphQL Motoru &amp; Kişisel Veri Kontrolü Sende.</footer>
 
   <script src="app.js"></script>
   <script>
     if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(() => {}));
+      navigator.serviceWorker.register("./sw.js").catch(() => {});
     }
   </script>
 </body>

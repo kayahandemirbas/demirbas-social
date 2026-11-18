@@ -1,8 +1,27 @@
-/* DEMİRBAŞ SOCIAL V2.0 — Snapshot Geçmişi, ZIP/JSON/Canlı Köprü, Whitelist ve 2 Güvenli Unfollow Modu */
+/* DEMİRBAŞ SOCIAL V2.6 — GraphQL Motoru (usePolarisUnfollowMutation), Hız Ayarları, Filtre Çipleri, Snapshot Geçmişi & Yüzen Panel */
 
 const STORAGE_KEY = "demirbas_social_v2_store";
 const $ = (id) => document.getElementById(id);
 const norm = (s) => String(s || "").trim().replace(/^@/, "").toLowerCase();
+
+const DEFAULT_TIMINGS = {
+  scanDelayMin: 1000,
+  scanDelayMax: 1300,
+  scanPauseEveryPages: 7,
+  scanPauseMs: 10000,
+  usersPerRequest: 200,
+  unfollowDelayMin: 4000,
+  unfollowDelayMax: 4800,
+  unfollowPauseEvery: 5,
+  unfollowPauseMs: 300000
+};
+
+const DEFAULT_AVATAR_RE = /44884218_345707102882519|464760996_1254146839119862/;
+
+function isDefaultAvatarUrl(url) {
+  if (!url) return true;
+  return DEFAULT_AVATAR_RE.test(String(url));
+}
 
 function escapeHtml(s) {
   return String(s || "").replace(/[&<>"']/g, (c) => ({
@@ -32,6 +51,20 @@ const DEFAULT_BRIDGE = window.location.hostname.endsWith("github.io")
   ? "http://127.0.0.1:8090"
   : window.location.origin;
 
+function sanitizeTimings(raw) {
+  const out = { ...DEFAULT_TIMINGS };
+  if (raw && typeof raw === "object") {
+    for (const k of Object.keys(out)) {
+      const n = Number(raw[k]);
+      if (Number.isFinite(n) && n >= 0) out[k] = Math.round(n);
+    }
+  }
+  out.usersPerRequest = Math.min(200, Math.max(12, out.usersPerRequest));
+  if (out.scanDelayMax < out.scanDelayMin) out.scanDelayMax = out.scanDelayMin;
+  if (out.unfollowDelayMax < out.unfollowDelayMin) out.unfollowDelayMax = out.unfollowDelayMin;
+  return out;
+}
+
 function loadStore() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -44,8 +77,19 @@ function loadStore() {
         unfollowers: Array.isArray(p.unfollowers) ? p.unfollowers : [],
         collabs: Array.isArray(p.collabs) ? p.collabs : [],
         whitelist: p.whitelist && typeof p.whitelist === "object" ? p.whitelist : {},
+        hidden: p.hidden && typeof p.hidden === "object" ? p.hidden : {},
+        filters: p.filters && typeof p.filters === "object"
+          ? {
+              verified: p.filters.verified !== false,
+              private: p.filters.private !== false,
+              noAvatar: p.filters.noAvatar !== false,
+              showHidden: Boolean(p.filters.showHidden)
+            }
+          : { verified: true, private: true, noAvatar: true, showHidden: false },
+        timings: sanitizeTimings(p.timings),
         bridgeUrl: p.bridgeUrl || DEFAULT_BRIDGE,
-        accountUsername: p.accountUsername || ""
+        accountUsername: p.accountUsername || "",
+        _lastSyncedRemoteSnap: p._lastSyncedRemoteSnap || ""
       };
     }
   } catch {}
@@ -56,8 +100,12 @@ function loadStore() {
     unfollowers: [],
     collabs: [],
     whitelist: {},
+    hidden: {},
+    filters: { verified: true, private: true, noAvatar: true, showHidden: false },
+    timings: { ...DEFAULT_TIMINGS },
     bridgeUrl: DEFAULT_BRIDGE,
-    accountUsername: ""
+    accountUsername: "",
+    _lastSyncedRemoteSnap: ""
   };
 }
 
@@ -69,7 +117,8 @@ const ui = {
   semiIdx: 0,
   pendingScriptUsers: [],
   bridgeConnected: false,
-  pollTimer: null
+  pollTimer: null,
+  dismissedDoneStamp: ""
 };
 
 function saveStore() {
@@ -88,19 +137,41 @@ function notify(msg, isError = false) {
   b.style.display = "flex";
 }
 
+async function copyTextSafe(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch {}
+    ta.remove();
+    return ok;
+  }
+}
+
 function toUserObj(u) {
   if (typeof u === "string") {
     const un = norm(u);
-    return un ? { user_id: un, username: un, full_name: "", avatar_url: "" } : null;
+    return un ? { user_id: un, username: un, full_name: "", avatar_url: "", is_verified: false, is_private: false, default_avatar: true } : null;
   }
   if (!u || typeof u !== "object") return null;
   const un = norm(u.username || u.value || u.title || "");
   if (!un) return null;
+  const av = String(u.avatar_url || u.profile_pic_url || "");
   return {
     user_id: String(u.user_id || u.pk || u.id || un),
     username: un,
     full_name: String(u.full_name || ""),
-    avatar_url: String(u.avatar_url || u.profile_pic_url || "")
+    avatar_url: av,
+    is_verified: Boolean(u.is_verified),
+    is_private: Boolean(u.is_private),
+    default_avatar: u.default_avatar !== undefined ? Boolean(u.default_avatar) : isDefaultAvatarUrl(av)
   };
 }
 
@@ -112,7 +183,12 @@ function dedupeUsers(arr) {
     const prev = map.get(u.username);
     if (prev) {
       if (!prev.full_name && u.full_name) prev.full_name = u.full_name;
-      if (!prev.avatar_url && u.avatar_url) prev.avatar_url = u.avatar_url;
+      if (!prev.avatar_url && u.avatar_url) {
+        prev.avatar_url = u.avatar_url;
+        prev.default_avatar = u.default_avatar;
+      }
+      if (u.is_verified) prev.is_verified = true;
+      if (u.is_private) prev.is_private = true;
       if (prev.user_id === prev.username && u.user_id !== u.username) prev.user_id = u.user_id;
     } else {
       map.set(u.username, u);
@@ -121,14 +197,13 @@ function dedupeUsers(arr) {
   return [...map.values()];
 }
 
-/* Yeni taramayı önceki snapshot ile karşılaştır ve Bizi Takipten Çıkanları kaydet */
 function applyNewSnapshot({ followers, following, collabs = [], accountUsername = "" }) {
   const cleanFollowers = dedupeUsers(followers);
   const cleanFollowing = dedupeUsers(following);
   const nowIso = new Date().toISOString();
 
   let newDroppedCount = 0;
-  if (store.followers.length > 0) {
+  if (store.followers.length > 0 && cleanFollowers.length > 0) {
     const currentSet = new Set(cleanFollowers.map((u) => u.username));
     const existingUnfSet = new Set(store.unfollowers.map((u) => u.username + "|" + u.prev_snap_at));
     const prevSnapAt = store.snapshots[0]?.created_at || nowIso;
@@ -183,6 +258,57 @@ function applyNewSnapshot({ followers, following, collabs = [], accountUsername 
   );
 }
 
+/* Yüzen Panelden Aktarılan Sadece Takip Etmeyenler veya Düz Metin Listesi Desteği */
+function importImportedPayloadOrText(rawText) {
+  const trimmed = String(rawText || "").trim();
+  if (!trimmed) return false;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (Array.isArray(parsed.followers) && Array.isArray(parsed.following)) {
+      applyNewSnapshot(parsed);
+      return true;
+    }
+    if (Array.isArray(parsed.nonFollowers)) {
+      const nf = dedupeUsers(parsed.nonFollowers);
+      const followerSet = new Set(store.followers.map((u) => u.username));
+      const mergedFollowing = dedupeUsers([
+        ...store.following.filter((u) => followerSet.has(u.username)),
+        ...nf
+      ]);
+      applyNewSnapshot({
+        accountUsername: store.accountUsername,
+        followers: store.followers,
+        following: mergedFollowing.length ? mergedFollowing : nf,
+        collabs: store.collabs
+      });
+      return true;
+    }
+  } catch {}
+
+  // Satır satır kullanıcı adı listesi (@kullanici veya düz metin)
+  const lines = trimmed
+    .split(/\r?\n/)
+    .flatMap((l) => l.trim().split(/[\s,;]+/))
+    .map((x) => {
+      const m = /instagram\.com\/([^/?#]+)/i.exec(x);
+      return norm(m ? m[1] : x);
+    })
+    .filter((n) => /^[a-z0-9._]{1,30}$/.test(n));
+
+  if (lines.length > 0) {
+    const nf = dedupeUsers(lines);
+    const followerSet = new Set(store.followers.map((u) => u.username));
+    applyNewSnapshot({
+      accountUsername: store.accountUsername,
+      followers: store.followers,
+      following: dedupeUsers([...store.following.filter((u) => followerSet.has(u.username)), ...nf]),
+      collabs: store.collabs
+    });
+    return true;
+  }
+  return false;
+}
+
 /* JSON / HTML / CSV içerisinden kullanıcıları çıkar */
 function extractUsersFromJson(data) {
   const out = [];
@@ -206,7 +332,10 @@ function extractUsersFromJson(data) {
           user_id: v.pk || v.id || v.user_id || v.username,
           username: v.username,
           full_name: v.full_name || "",
-          avatar_url: v.profile_pic_url || v.avatar_url || ""
+          avatar_url: v.profile_pic_url || v.avatar_url || "",
+          is_verified: Boolean(v.is_verified),
+          is_private: Boolean(v.is_private),
+          default_avatar: v.default_avatar
         });
       } else if (v.value && typeof v.value === "string" && (v.href || v.timestamp)) {
         out.push({ username: v.value });
@@ -218,7 +347,6 @@ function extractUsersFromJson(data) {
   return dedupeUsers(out);
 }
 
-/* Gönderi arşivinden ortak paylaşım / etiketleri çıkar */
 function extractCollabsFromPostJson(data, selfUsername = "") {
   const counts = new Map();
   const addMention = (uname, fullName = "") => {
@@ -249,7 +377,6 @@ function extractCollabsFromPostJson(data, selfUsername = "") {
   return [...counts.values()];
 }
 
-/* Saf Tarayıcı ZIP Açıcı (iPhone'da indirilen instagram-*.zip arşivini doğrudan okur) */
 async function extractTextFilesFromZip(arrayBuffer) {
   const view = new DataView(arrayBuffer);
   const bytes = new Uint8Array(arrayBuffer);
@@ -360,18 +487,7 @@ async function importUploadedFiles(fileList) {
         collabs.push(...extractCollabsFromPostJson(JSON.parse(vf.text), store.accountUsername));
       } catch {}
     } else {
-      try {
-        const parsed = JSON.parse(vf.text);
-        if (parsed && Array.isArray(parsed.followers) && Array.isArray(parsed.following)) {
-          applyNewSnapshot(parsed);
-          return;
-        }
-        if (parsed && parsed.relationships_following) {
-          if (!gotFollowing) { following = []; gotFollowing = true; }
-          following.push(...extractUsersFromJson(parsed));
-          continue;
-        }
-      } catch {}
+      if (importImportedPayloadOrText(vf.text)) return;
       const u = parseUsersFromRawText(vf.text);
       if (u.length) unknowns.push({ file: vf.name, users: u });
     }
@@ -416,7 +532,7 @@ function computeTabs() {
 
   const notback = store.following
     .filter((u) => !followerSet.has(u.username))
-    .map((u) => enrich(u, "Seni geri takip etmiyor"));
+    .map((u) => enrich(u, ""));
 
   const unfollowers = store.unfollowers.map((u) =>
     enrich(u, "Takipten çıkış: " + fmtDate(u.detected_at))
@@ -446,17 +562,56 @@ function computeTabs() {
 function getVisibleRows() {
   const all = computeTabs();
   const q = norm($("searchInput").value);
-  const list = all[ui.tab] || [];
-  if (!q) return list;
-  return list.filter(
-    (u) => u.username.includes(q) || (u.full_name || "").toLowerCase().includes(q)
-  );
+  const f = store.filters;
+  let list = all[ui.tab] || [];
+
+  list = list.filter((u) => {
+    const isHid = Boolean(store.hidden[u.username]);
+    if (f.showHidden) {
+      if (!isHid) return false;
+    } else if (isHid) {
+      return false;
+    }
+    if (!f.verified && u.is_verified) return false;
+    if (!f.private && u.is_private) return false;
+    const noAv = u.default_avatar !== undefined ? Boolean(u.default_avatar) : isDefaultAvatarUrl(u.avatar_url);
+    if (!f.noAvatar && noAv) return false;
+    if (q && !(u.username.includes(q) || (u.full_name || "").toLowerCase().includes(q))) {
+      return false;
+    }
+    return true;
+  });
+
+  return list;
+}
+
+function resolveAvatarSrc(rawUrl) {
+  if (!rawUrl) return "";
+  if (ui.bridgeConnected) {
+    const base = (store.bridgeUrl || DEFAULT_BRIDGE).replace(/\/+$/, "");
+    return `${base}/api/avatar?url=${encodeURIComponent(rawUrl)}`;
+  }
+  return rawUrl;
+}
+
+function updateTimingHintUI() {
+  const t = store.timings;
+  const minS = (t.unfollowDelayMin / 1000).toFixed(1).replace(/\.0$/, "");
+  const maxS = (t.unfollowDelayMax / 1000).toFixed(1).replace(/\.0$/, "");
+  const molaMin = Math.round(t.unfollowPauseMs / 60000);
+  const molaStr = t.unfollowPauseEvery > 0 && t.unfollowPauseMs > 0
+    ? ` · Her ${t.unfollowPauseEvery} işlemde ${molaMin || Math.round(t.unfollowPauseMs / 1000) + " sn"}${molaMin ? " dk" : ""} mola`
+    : "";
+  if ($("mode1TimingHint")) {
+    $("mode1TimingHint").textContent = `${minS}–${maxS} sn gecikme${molaStr}`;
+  }
 }
 
 function renderAll() {
   const tabs = computeTabs();
   const hasData = store.snapshots.length > 0 || store.followers.length > 0 || store.following.length > 0;
   const lastSnap = store.snapshots[0];
+  const hiddenTotal = Object.keys(store.hidden).length;
 
   $("followersCount").textContent = hasData ? store.followers.length.toLocaleString("tr-TR") : "—";
   $("followingCount").textContent = hasData ? store.following.length.toLocaleString("tr-TR") : "—";
@@ -466,7 +621,7 @@ function renderAll() {
   $("followersHint").textContent = lastSnap ? `Son: ${fmtDate(lastSnap.created_at)}` : "Henüz tarama yok";
   $("followingHint").textContent = store.accountUsername ? `@${store.accountUsername}` : (hasData ? "Kaydedilen snapshot" : "Henüz tarama yok");
   $("unfollowersHint").textContent = `${store.snapshots.length} snapshot kayıtlı`;
-  $("snapshotTag").textContent = `V2.0 · ${store.snapshots.length} SNAPSHOT`;
+  $("snapshotTag").textContent = `V2.6 · ${store.snapshots.length} SNAPSHOT`;
 
   $("notbackTabCount").textContent = tabs.notback.length;
   $("unfollowersTabCount").textContent = tabs.unfollowers.length;
@@ -479,19 +634,36 @@ function renderAll() {
     b.classList.toggle("active", b.dataset.tab === ui.tab)
   );
 
+  // Filter chips state
+  document.querySelectorAll("[data-chip]").forEach((ch) => {
+    const k = ch.dataset.chip;
+    const on = Boolean(store.filters[k]);
+    ch.classList.toggle("active", on);
+    if (k === "verified") ch.textContent = `${on ? "✓ " : ""}Onaylı`;
+    if (k === "private") ch.textContent = `${on ? "✓ " : ""}Gizli`;
+    if (k === "noAvatar") ch.textContent = `${on ? "✓ " : ""}Profil resmi yok`;
+    if (k === "showHidden") ch.textContent = `${on ? "✓ " : ""}Gizlenenler (${hiddenTotal})`;
+  });
+
+  updateTimingHintUI();
+
   $("protectCollabsBtn").style.display = ui.tab === "collabs" && tabs.collabs.length > 0 ? "inline-block" : "none";
   $("protectSelectedBtn").style.display = ui.selected.size > 0 ? "inline-block" : "none";
   $("clearSelectBtn").style.display = ui.selected.size > 0 ? "inline-block" : "none";
   $("unfollowBar").style.display = ui.selected.size > 0 ? "block" : "none";
-  $("selectedCountLabel").textContent = `${ui.selected.size} hesap seçildi`;
+  $("selectedCountLabel").textContent = `${ui.selected.size} seçili`;
 
   const rows = getVisibleRows();
+  if ($("notBackFilteredHint") && ui.tab === "notback" && hasData) {
+    $("notBackFilteredHint").textContent = `${rows.length} gösteriliyor · Takip ettiklerin`;
+  }
+
   if (!rows.length) {
     $("resultList").innerHTML = `
       <div class="empty">
         <span>◎</span>
-        <strong>${hasData ? "Bu sekmede sonuç bulunamadı" : "Henüz analiz yapılmadı"}</strong>
-        <p>${hasData ? "Arama filtresini temizleyebilir veya diğer sekmelere geçebilirsin." : "Instagram ZIP/JSON arşivini yükle, Yöntem 2 (sessionid) ile canlı tara veya Demo veriyi dene."}</p>
+        <strong>${hasData ? "Bu filtrede sonuç bulunamadı" : "Henüz analiz yapılmadı"}</strong>
+        <p>${hasData ? "Üstteki Onaylı / Gizli / Profil resmi yok çiplerini veya arama kutusunu kontrol edebilirsin." : "Instagram ZIP/JSON arşivini yükle, Yöntem 2 (sessionid) ile canlı tara veya Demo veriyi dene."}</p>
       </div>`;
     return;
   }
@@ -500,14 +672,18 @@ function renderAll() {
     const uname = escapeHtml(u.username);
     const isSel = ui.selected.has(u.username);
     const isProt = Boolean(store.whitelist[u.username]);
-    const initial = (u.username[0] || "?").toUpperCase();
+    const isHid = Boolean(store.hidden[u.username]);
+    const initial = escapeHtml((u.username[0] || "?").toUpperCase());
+    const avSrc = resolveAvatarSrc(u.avatar_url);
     return `
       <div class="user-row ${isSel ? "selected" : ""} ${isProt ? "protected" : ""}" data-uname="${uname}">
         <div class="chk">${isSel ? "✓" : ""}</div>
-        <div class="avatar">${u.avatar_url ? `<img src="${escapeHtml(u.avatar_url)}" alt="">` : initial}</div>
+        <div class="avatar">${avSrc ? `<img src="${escapeHtml(avSrc)}" referrerpolicy="no-referrer" loading="lazy" alt="" onerror="this.parentElement.textContent='${initial}'">` : initial}</div>
         <div class="user-meta">
           <div class="user-line">
             <span class="user-name">@${uname}</span>
+            ${u.is_verified ? `<span class="badge-verified">ONAYLI</span>` : ""}
+            ${u.is_private ? `<span class="badge-private">GİZLİ</span>` : ""}
             ${u.collabCount ? `<span class="badge-collab">🤝 ${u.collabCount} ortak</span>` : ""}
           </div>
           ${u.full_name ? `<div class="user-full">${escapeHtml(u.full_name)}</div>` : ""}
@@ -517,14 +693,30 @@ function renderAll() {
           <button class="shield-btn ${isProt ? "on" : ""}" data-shield="${uname}" type="button">
             ${isProt ? "🛡 Korumalı" : "+ Koru"}
           </button>
-          <a class="ext-link" href="https://www.instagram.com/${encodeURIComponent(u.username)}/" target="_blank" rel="noopener" onclick="event.stopPropagation()">↗</a>
+          <a class="ext-link" href="https://www.instagram.com/${encodeURIComponent(u.username)}/" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Profili aç">↗</a>
+          <button class="hide-btn" data-hide="${uname}" type="button">${isHid ? "Göster" : "Gizle"}</button>
         </div>
       </div>`;
   }).join("");
 }
 
-/* Liste Tıklama ve Kalkan Yönetimi */
+/* Liste Tıklama, Gizle ve Kalkan Yönetimi */
 $("resultList").addEventListener("click", (e) => {
+  const hideBtn = e.target.closest("[data-hide]");
+  if (hideBtn) {
+    e.stopPropagation();
+    const uname = hideBtn.dataset.hide;
+    if (store.hidden[uname]) {
+      delete store.hidden[uname];
+    } else {
+      store.hidden[uname] = true;
+      ui.selected.delete(uname);
+    }
+    saveStore();
+    renderAll();
+    return;
+  }
+
   const shieldBtn = e.target.closest("[data-shield]");
   if (shieldBtn) {
     e.stopPropagation();
@@ -549,6 +741,16 @@ $("resultList").addEventListener("click", (e) => {
   renderAll();
 });
 
+/* Filtre Çipleri Tıklama */
+$("filterChips").addEventListener("click", (e) => {
+  const chip = e.target.closest("[data-chip]");
+  if (!chip) return;
+  const k = chip.dataset.chip;
+  store.filters[k] = !store.filters[k];
+  saveStore();
+  renderAll();
+});
+
 function getSelectedUserObjects() {
   const allMap = new Map();
   for (const list of Object.values(computeTabs())) {
@@ -570,28 +772,27 @@ function removeUnfollowedLocally(usernames) {
   renderAll();
 }
 
-/* Demo Verisi (2 ardışık Snapshot simüle eder -> Bizi Takipten Çıkanlar + Ortak Paylaşım görünür) */
+/* Demo Verisi */
 function runDemo() {
   store.followers = [
-    { user_id: "101", username: "ayse.foto", full_name: "Ayşe Yılmaz", avatar_url: "" },
-    { user_id: "102", username: "mehmet_34", full_name: "Mehmet Demir", avatar_url: "" },
-    { user_id: "103", username: "selin.art", full_name: "Selin Kaya", avatar_url: "" },
-    { user_id: "104", username: "burak.music", full_name: "Burak Şahin", avatar_url: "" },
-    { user_id: "105", username: "deniz.design", full_name: "Deniz Arslan", avatar_url: "" },
-    { user_id: "106", username: "studio_example", full_name: "Studio Creative", avatar_url: "" }
+    { user_id: "101", username: "ayse.foto", full_name: "Ayşe Yılmaz", avatar_url: "", is_verified: false, is_private: false, default_avatar: false },
+    { user_id: "102", username: "mehmet_34", full_name: "Mehmet Demir", avatar_url: "", is_verified: false, is_private: true, default_avatar: false },
+    { user_id: "103", username: "selin.art", full_name: "Selin Kaya", avatar_url: "", is_verified: false, is_private: false, default_avatar: false },
+    { user_id: "104", username: "burak.music", full_name: "Burak Şahin", avatar_url: "", is_verified: true, is_private: false, default_avatar: false },
+    { user_id: "105", username: "deniz.design", full_name: "Deniz Arslan", avatar_url: "", is_verified: false, is_private: false, default_avatar: false },
+    { user_id: "106", username: "studio_example", full_name: "Studio Creative", avatar_url: "", is_verified: true, is_private: false, default_avatar: false }
   ];
   store.following = [
-    { user_id: "101", username: "ayse.foto", full_name: "Ayşe Yılmaz", avatar_url: "" },
-    { user_id: "102", username: "mehmet_34", full_name: "Mehmet Demir", avatar_url: "" },
-    { user_id: "201", username: "kaya_video", full_name: "Kaya Prodüksiyon", avatar_url: "" },
-    { user_id: "202", username: "mert.fx", full_name: "Mert Efekt", avatar_url: "" },
-    { user_id: "203", username: "marka.vitrin", full_name: "Marka Vitrin Official", avatar_url: "" },
-    { user_id: "106", username: "studio_example", full_name: "Studio Creative", avatar_url: "" }
+    { user_id: "101", username: "ayse.foto", full_name: "Ayşe Yılmaz", avatar_url: "", is_verified: false, is_private: false, default_avatar: false },
+    { user_id: "102", username: "mehmet_34", full_name: "Mehmet Demir", avatar_url: "", is_verified: false, is_private: true, default_avatar: false },
+    { user_id: "201", username: "kaya_video", full_name: "Kaya Prodüksiyon", avatar_url: "", is_verified: true, is_private: false, default_avatar: false },
+    { user_id: "202", username: "mert.fx", full_name: "Mert Efekt", avatar_url: "", is_verified: false, is_private: true, default_avatar: false },
+    { user_id: "203", username: "anonim_profil", full_name: "Anonim Hesap", avatar_url: "", is_verified: false, is_private: false, default_avatar: true },
+    { user_id: "106", username: "studio_example", full_name: "Studio Creative", avatar_url: "", is_verified: true, is_private: false, default_avatar: false }
   ];
   store.snapshots = [{ id: Date.now() - 86400000, created_at: new Date(Date.now() - 86400000).toISOString(), followers_count: 6, following_count: 6 }];
   store.whitelist["studio_example"] = { user_id: "106", username: "studio_example", full_name: "Studio Creative", avatar_url: "", added_at: new Date().toISOString() };
 
-  // 2. Tarama: selin.art ve burak.music takipten çıkmış olsun
   applyNewSnapshot({
     accountUsername: "demirbas.demo",
     followers: store.followers.filter((u) => u.username !== "selin.art" && u.username !== "burak.music"),
@@ -603,9 +804,9 @@ function runDemo() {
   });
 }
 
-/* YÖNTEM 2: Yerel Köprü Sunucusu ve Canlı Tarama Betiği */
+/* YÖNTEM 2: Yerel Köprü Sunucusu */
 async function bridgeFetch(path, body) {
-  const base = ($("bridgeUrlInput").value || store.bridgeUrl || "http://127.0.0.1:8090").trim().replace(/\/+$/, "");
+  const base = ($("bridgeUrlInput")?.value || store.bridgeUrl || "http://127.0.0.1:8090").trim().replace(/\/+$/, "");
   store.bridgeUrl = base;
   saveStore();
   const opts = body !== undefined
@@ -616,111 +817,183 @@ async function bridgeFetch(path, body) {
   return res.json();
 }
 
+function renderRunnerCard(rn) {
+  if (!rn) {
+    $("queueCard").style.display = "none";
+    return;
+  }
+  const total = Math.max(0, Number(rn.batch_total || 0));
+  const okCnt = Math.max(0, Number(rn.batch_ok || 0));
+  const failCnt = Math.max(0, Number(rn.batch_fail || 0));
+  const doneCnt = okCnt + failCnt;
+  const doneStamp = `${total}:${okCnt}:${failCnt}:${rn.last_username || ""}`;
+
+  const activeOrRecentDone = rn.is_running || rn.is_paused_warning || rn.pending_count > 0 || (total > 0 && doneCnt > 0 && ui.dismissedDoneStamp !== doneStamp);
+  if (!activeOrRecentDone) {
+    $("queueCard").style.display = "none";
+    return;
+  }
+
+  $("queueCard").style.display = "block";
+  const pct = total > 0 ? Math.min(100, Math.round((doneCnt / total) * 100)) : (rn.is_running ? 35 : 100);
+  $("queueProgressBar").style.width = `${pct}%`;
+
+  const isCompleted = !rn.is_running && rn.pending_count === 0 && doneCnt > 0 && !rn.is_paused_warning;
+  $("queueTitle").textContent = isCompleted
+    ? "Tamamlandı"
+    : (rn.is_paused_warning ? "Duraklatıldı" : `Takibi bırakılıyor (${doneCnt}/${total || rn.pending_count})`);
+
+  $("queueMetricsText").textContent = `${okCnt} başarılı, ${failCnt} başarısız`;
+  $("queueSubText").textContent = isCompleted
+    ? `${rn.elapsed_sec || 1} sn sürdü`
+    : (rn.status_message || "");
+
+  const who = rn.last_username || rn.current_username;
+  if (who) {
+    $("queueCurrentPill").style.display = "inline-flex";
+    $("queueCurrentUser").textContent = "@" + who;
+    const badge = $("queueCurrentBadge");
+    badge.textContent = rn.last_ok === false ? "✕" : "✓";
+    badge.className = "ok-badge" + (rn.last_ok === false ? " err" : "");
+  } else {
+    $("queueCurrentPill").style.display = "none";
+  }
+
+  $("qPauseBtn").style.display = rn.is_running ? "inline-block" : "none";
+  $("qResumeBtn").style.display = !rn.is_running && rn.pending_count > 0 ? "inline-block" : "none";
+  $("qClearBtn").dataset.stamp = doneStamp;
+}
+
 function startBridgePolling() {
   if (ui.pollTimer) return;
-  ui.pollTimer = setInterval(async () => {
+  const tick = async () => {
     try {
       const st = await bridgeFetch("/api/state");
+      const wasConnected = ui.bridgeConnected;
       ui.bridgeConnected = true;
-      $("sessionPillText").textContent = st.session?.logged_in ? "Köprü Aktif · Canlı" : "Köprü Bağlı";
+      $("sessionPillText").textContent = st.session?.logged_in
+        ? `Köprü Aktif · @${st.session.username || "Canlı"}`
+        : "Köprü Bağlı";
+
+      if (st.timings && !wasConnected) {
+        store.timings = sanitizeTimings(st.timings);
+        saveStore();
+        updateTimingHintUI();
+      }
 
       if (st.scan?.active) {
         notify("⏳ " + st.scan.message);
-      } else if (st.scan?.phase === "done" && st.latest_snapshot) {
-        const remoteStamp = st.latest_snapshot.created_at;
-        if (store._lastSyncedRemoteSnap !== remoteStamp) {
-          store._lastSyncedRemoteSnap = remoteStamp;
+      } else if (st.latest_snapshot) {
+        const remoteCountSig = `${st.latest_snapshot.id}:${st.latest_snapshot.following_count}:${st.latest_snapshot.followers_count}`;
+        if (store._lastSyncedRemoteSnap !== remoteCountSig) {
+          store._lastSyncedRemoteSnap = remoteCountSig;
           const followers = st.all_followers || [];
           const notBack = st.dont_follow_back || [];
           const mutuals = st.mutuals || [];
           applyNewSnapshot({
-            accountUsername: st.latest_snapshot.username || "",
+            accountUsername: st.latest_snapshot.username || st.session?.username || "",
             followers,
             following: [...mutuals, ...notBack],
             collabs: st.collabs || []
           });
+        } else if (!wasConnected) {
+          renderAll();
         }
       }
 
-      const rn = st.runner;
-      if (rn && (rn.pending_count > 0 || rn.is_running || rn.is_paused_warning)) {
-        $("queueCard").style.display = "block";
-        $("queueTitle").textContent = `⏱ Korumalı Kuyruk (${rn.pending_count} bekliyor · Saatlik: ${rn.completed_last_hour}/20)`;
-        $("queueSubText").textContent = rn.status_message;
-        $("qPauseBtn").style.display = rn.is_running ? "inline-block" : "none";
-        $("qResumeBtn").style.display = !rn.is_running && rn.pending_count > 0 ? "inline-block" : "none";
-      } else {
-        $("queueCard").style.display = "none";
-      }
+      renderRunnerCard(st.runner);
     } catch {
       ui.bridgeConnected = false;
     }
-  }, 2500);
+  };
+  tick();
+  ui.pollTimer = setInterval(tick, 2000);
 }
 
-function buildBrowserLiveScannerScript() {
-  return `(async () => {
-  const sleep = () => new Promise(r => setTimeout(r, 1500 + Math.random() * 2000));
-  const csrf = (document.cookie.match(/(^| )csrftoken=([^;]+)/)||[])[2] || "";
-  const headers = { "X-IG-App-ID": "936619743392459", "X-Requested-With": "XMLHttpRequest", "X-CSRFToken": csrf };
-  console.log("🔍 DEMİRBAŞ SOCIAL: Oturum doğrulanıyor...");
-  const meRes = await fetch("/api/v1/accounts/current_user/?edit=true", { credentials: "include", headers });
-  const me = await meRes.json();
-  const uid = String(me?.user?.pk || (document.cookie.match(/(^| )ds_user_id=([^;]+)/)||[])[2] || "");
-  if (!uid) return alert("Aktif Instagram oturumu bulunamadı!");
-  async function grab(ep, label) {
-    const map = new Map(); let maxId = "";
-    while (true) {
-      const url = maxId ? ep + "&max_id=" + encodeURIComponent(maxId) : ep;
-      const r = await fetch(url, { credentials: "include", headers });
-      if (r.status === 429) throw new Error("429 Hız Sınırı! Güvenlik için durduruldu.");
-      const d = await r.json();
-      for (const u of (d.users || [])) map.set(String(u.pk), { user_id: String(u.pk), username: u.username, full_name: u.full_name || "" });
-      console.log(label + ": " + map.size);
-      if (!d.next_max_id || !d.users?.length) break;
-      maxId = d.next_max_id; await sleep();
+/* DEMİRBAŞ v2.6 Yüzen Panel Kodunu Kopyala */
+async function copyFloatingPanelCode() {
+  try {
+    const res = await fetch("./demirbas-panel.js", { cache: "no-cache" });
+    if (!res.ok) throw new Error("Panel dosyası okunamadı");
+    const code = await res.text();
+    const ok = await copyTextSafe(code);
+    if (ok) {
+      notify("⚡ DEMİRBAŞ SOCIAL v2.6 Yüzen Panel kodu kopyalandı! instagram.com Console'a (ilk seferde 'allow pasting' yazıp) yapıştırın.");
+    } else {
+      notify("Pano izni verilemedi; tekrar deneyin.", true);
     }
-    return [...map.values()];
+  } catch (err) {
+    notify("Yüzen panel kodu yüklenemedi: " + err.message, true);
   }
-  const followers = await grab("/api/v1/friendships/" + uid + "/followers/?count=50", "Takipçi");
-  await sleep();
-  const following = await grab("/api/v1/friendships/" + uid + "/following/?count=50", "Takip Edilen");
-  const payload = JSON.stringify({ accountUsername: me?.user?.username || "", followers, following, collabs: [] });
-  await navigator.clipboard.writeText(payload).catch(() => {});
-  window.prompt("Tarama tamamlandı! Aşağıdaki JSON kopyalandı; DEMİRBAŞ SOCIAL'a yapıştırın:", payload);
-})();`;
 }
 
+/* Köprüsüz GraphQL Unfollow Kuyruğu (usePolarisUnfollowMutation + Hız Ayarları) */
 function buildProtectedUnfollowScript(users) {
-  const slim = users.map((u) => ({ user_id: u.user_id, username: u.username }));
+  const slim = users.map((u) => ({ id: String(u.user_id), username: u.username }));
+  const t = store.timings;
   return `(async () => {
+  if (location.hostname !== "www.instagram.com") return alert("Önce https://www.instagram.com sekmesini açıp Console'da çalıştırın.");
   const targets = ${JSON.stringify(slim)};
-  const csrf = (document.cookie.match(/(^| )csrftoken=([^;]+)/)||[])[2] || "";
-  if (!csrf) return alert("csrftoken bulunamadı! instagram.com sekmesinde çalıştırın.");
-  const headers = { "X-IG-App-ID": "936619743392459", "X-Requested-With": "XMLHttpRequest", "X-CSRFToken": csrf, "Content-Type": "application/x-www-form-urlencoded" };
-  let count = 0;
-  for (const t of targets) {
-    if (count >= 20) { alert("Saatlik maksimum 20 güvenli işlem sınırına ulaşıldı, kuyruk durduruldu."); break; }
-    let uid = t.user_id;
-    if (!/^[0-9]+$/.test(String(uid))) {
-      const info = await fetch("/api/v1/users/web_profile_info/?username=" + encodeURIComponent(t.username), { credentials: "include", headers }).then(r => r.json());
-      uid = info?.data?.user?.id;
+  const timings = ${JSON.stringify(t)};
+  const csrf = (document.cookie.match(/(?:^|; )csrftoken=([^;]+)/)||[])[1] || "";
+  const dsUid = (document.cookie.match(/(?:^|; )ds_user_id=([^;]+)/)||[])[1] || "";
+  if (!csrf || !dsUid) return alert("Aktif Instagram oturumu (csrftoken) bulunamadı!");
+  const html = document.documentElement.innerHTML;
+  const fbDtsg = (/"DTSGInitialData",\\[\\],\\{"token":"([^"]+)"/.exec(html)||[])[1] || (/"dtsg":\\{"token":"([^"]+)"/.exec(html)||[])[1] || "";
+  const lsd = (/"LSD",\\[\\],\\{"token":"([^"]+)"/.exec(html)||[])[1] || "";
+  if (!fbDtsg || !lsd) return alert("Sayfa tokenları (fb_dtsg/lsd) bulunamadı, sayfayı yenileyip tekrar deneyin.");
+  const jazoest = "2" + [...fbDtsg].reduce((s, c) => s + c.charCodeAt(0), 0);
+  let ok = 0, fail = 0;
+  for (let i = 0; i < targets.length; i++) {
+    const u = targets[i];
+    let uid = u.id;
+    if (!/^\\d+$/.test(uid)) {
+      const r = await fetch("/api/v1/friendships/" + dsUid + "/following/?count=12&query=" + encodeURIComponent(u.username) + "&search_surface=follow_list_page", {
+        credentials: "include",
+        headers: { "x-ig-app-id": "936619743392459", "x-asbd-id": "129477", "x-requested-with": "XMLHttpRequest" }
+      }).then(x => x.json()).catch(() => ({}));
+      const m = (r.users || []).find(x => String(x.username).toLowerCase() === u.username.toLowerCase());
+      if (m) uid = String(m.pk || m.id);
     }
-    if (!uid) continue;
-    const res = await fetch("/api/v1/friendships/destroy/" + uid + "/", { method: "POST", credentials: "include", headers, body: "container_module=profile&user_id=" + uid });
-    const data = await res.json().catch(() => ({}));
-    if (res.status === 429 || !res.ok || data.status === "fail" || data.message === "feedback_required") {
-      alert("Instagram güvenlik uyarısı algılandı! Kuyruk anında durduruldu."); break;
+    const body = new URLSearchParams({
+      av: dsUid, __d: "www", __user: "0", __a: "1", __comet_req: "7",
+      fb_dtsg: fbDtsg, jazoest, lsd,
+      fb_api_caller_class: "RelayModern",
+      fb_api_req_friendly_name: "usePolarisUnfollowMutation",
+      variables: JSON.stringify({ target_user_id: String(uid), container_module: "profile", nav_chain: "PolarisProfilePostsTabRoot:profilePage:1:via_cold_start" }),
+      server_timestamps: "true",
+      doc_id: "27789106940691111"
+    }).toString();
+    const res = await fetch("/api/graphql", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "x-csrftoken": decodeURIComponent(csrf),
+        "x-fb-friendly-name": "usePolarisUnfollowMutation",
+        "x-fb-lsd": lsd,
+        "x-ig-app-id": "936619743392459",
+        "x-asbd-id": "129477"
+      },
+      body
+    });
+    const txt = (await res.text()).replace(/^for \\(;;\\);/, "");
+    if (res.status === 429 || /feedback_required|checkpoint_required|action_blocked/i.test(txt)) {
+      alert("Instagram hız sınırı algılandı, güvenlik için durduruldu!");
+      break;
     }
-    count++;
-    console.log("✓ Takipten çıkarıldı (" + count + "/" + targets.length + "): @" + t.username);
-    if (count < targets.length) {
-      const wait = Math.floor(25 + Math.random() * 31);
-      console.log("⏳ Sonraki işlem için " + wait + " sn bekleniyor...");
-      await new Promise(r => setTimeout(r, wait * 1000));
+    if (res.ok) { ok++; console.log("✓ Çıkarıldı (" + ok + "/" + targets.length + "): @" + u.username); }
+    else { fail++; }
+    if (i < targets.length - 1) {
+      const waitMs = timings.unfollowDelayMin + Math.floor(Math.random() * Math.max(1, timings.unfollowDelayMax - timings.unfollowDelayMin));
+      await new Promise(r => setTimeout(r, waitMs));
+      if (timings.unfollowPauseEvery > 0 && (i + 1) % timings.unfollowPauseEvery === 0 && timings.unfollowPauseMs > 0) {
+        console.log("⏳ Mola: " + Math.round(timings.unfollowPauseMs / 1000) + " sn...");
+        await new Promise(r => setTimeout(r, timings.unfollowPauseMs));
+      }
     }
   }
-  alert("Korumalı kuyruk tamamlandı: " + count + " hesap çıkarıldı.");
+  alert("DEMİRBAŞ GraphQL Tamamlandı: " + ok + " başarılı, " + fail + " başarısız.");
 })();`;
 }
 
@@ -736,14 +1009,15 @@ async function startMode1() {
     const res = await bridgeFetch("/api/queue/start", { users: targets });
     if (res.ok) {
       ui.selected.clear();
+      ui.dismissedDoneStamp = "";
       renderAll();
+      if (res.state?.runner) renderRunnerCard(res.state.runner);
       startBridgePolling();
-      notify(`${targets.length} hesap 25–55 sn korumalı otomatik kuyruğa alındı.`);
+      notify(`${targets.length} hesap GraphQL otomatik kuyruğuna alındı.`);
       return;
     }
   } catch {}
 
-  // Köprü açık değilse tek tıkla korumalı kuyruk betiği üret
   ui.pendingScriptUsers = targets;
   $("scriptQueueCount").textContent = targets.length;
   $("generatedQueueScript").value = buildProtectedUnfollowScript(targets);
@@ -774,6 +1048,36 @@ function updateSemiModal() {
   $("semiWebLink").href = `https://www.instagram.com/${encodeURIComponent(u.username)}/`;
 }
 
+/* Hız Ayarları Modal Yönetimi */
+function fillSettingsInputs(t) {
+  for (const k of Object.keys(DEFAULT_TIMINGS)) {
+    const el = $("st_" + k);
+    if (el) el.value = t[k];
+  }
+}
+
+function openSettingsModal() {
+  fillSettingsInputs(store.timings);
+  $("settingsModal").style.display = "flex";
+}
+
+async function saveSettingsFromModal() {
+  const raw = {};
+  for (const k of Object.keys(DEFAULT_TIMINGS)) {
+    const el = $("st_" + k);
+    if (el) raw[k] = Number(el.value);
+  }
+  store.timings = sanitizeTimings(raw);
+  saveStore();
+  updateTimingHintUI();
+  $("settingsModal").style.display = "none";
+
+  try {
+    await bridgeFetch("/api/settings", { timings: store.timings });
+  } catch {}
+  notify("⚙ Hız ayarları kaydedildi.");
+}
+
 /* Event Bağlantıları */
 $("fileInput").addEventListener("change", (e) => {
   if (e.target.files?.length) importUploadedFiles(e.target.files);
@@ -781,6 +1085,21 @@ $("fileInput").addEventListener("change", (e) => {
 });
 
 $("demoBtn").addEventListener("click", runDemo);
+
+$("openSettingsBtn").addEventListener("click", openSettingsModal);
+$("panelSettingsBtn").addEventListener("click", openSettingsModal);
+$("closeSettingsTopBtn").addEventListener("click", () => { $("settingsModal").style.display = "none"; });
+$("cancelSettingsBtn").addEventListener("click", () => { $("settingsModal").style.display = "none"; });
+$("resetSettingsBtn").addEventListener("click", () => { fillSettingsInputs(DEFAULT_TIMINGS); });
+$("saveSettingsBtn").addEventListener("click", saveSettingsFromModal);
+
+$("openFloatingPanelModalBtn").addEventListener("click", () => {
+  $("floatingPanelModal").style.display = "flex";
+});
+$("closeFloatingPanelModalBtn").addEventListener("click", () => {
+  $("floatingPanelModal").style.display = "none";
+});
+$("copyFullFloatingPanelBtn").addEventListener("click", copyFloatingPanelCode);
 
 document.querySelectorAll(".tab").forEach((b) =>
   b.addEventListener("click", () => {
@@ -813,6 +1132,21 @@ $("clearSelectBtn").addEventListener("click", () => {
   renderAll();
 });
 
+$("copyVisibleBtn").addEventListener("click", async () => {
+  const rows = getVisibleRows();
+  if (!rows.length) return;
+  const text = rows.map((r) => r.username).join("\n");
+  await copyTextSafe(text);
+  notify(`${rows.length} kullanıcı adı panoya kopyalandı.`);
+});
+
+$("copySelectedBtn").addEventListener("click", async () => {
+  const sel = [...ui.selected];
+  if (!sel.length) return;
+  await copyTextSafe(sel.join("\n"));
+  notify(`${sel.length} seçili kullanıcı adı panoya kopyalandı.`);
+});
+
 $("protectSelectedBtn").addEventListener("click", () => {
   const nowIso = new Date().toISOString();
   for (const u of getSelectedUserObjects()) {
@@ -836,8 +1170,8 @@ $("protectCollabsBtn").addEventListener("click", () => {
 
 $("exportBtn").addEventListener("click", () => {
   const rows = getVisibleRows();
-  const csv = "username,full_name,info\r\n" + rows.map((r) =>
-    `"${r.username.replace(/"/g, '""')}","${(r.full_name || "").replace(/"/g, '""')}","${(r.subtitle || "").replace(/"/g, '""')}"`
+  const csv = "username,full_name,verified,private,info\r\n" + rows.map((r) =>
+    `"${r.username.replace(/"/g, '""')}","${(r.full_name || "").replace(/"/g, '""')}","${r.is_verified ? 1 : 0}","${r.is_private ? 1 : 0}","${(r.subtitle || "").replace(/"/g, '""')}"`
   ).join("\r\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" }));
@@ -864,54 +1198,40 @@ $("closeMethod2Btn").addEventListener("click", () => {
 $("saveAndLiveScanBtn").addEventListener("click", async () => {
   const cookie_or_sessionid = $("sessionIdInput").value.trim();
   const csrftoken = $("csrfInput").value.trim();
-  if (!cookie_or_sessionid) {
-    alert("Lütfen sessionid değerini girin.");
-    return;
-  }
   try {
-    await bridgeFetch("/api/session", { cookie_or_sessionid, csrftoken });
+    if (cookie_or_sessionid) {
+      await bridgeFetch("/api/session", { cookie_or_sessionid, csrftoken });
+    }
     await bridgeFetch("/api/scan", {});
     $("method2Modal").style.display = "none";
     startBridgePolling();
-    notify("Canlı tarama başlatıldı (1.5–3.5 sn hız korumalı)…");
+    notify("🚀 Canlı tarama başlatıldı (Sayfa başına 200 hesap · Hız ayarlarıyla)…");
   } catch (err) {
-    alert("Yerel köprü sunucusuna ulaşılamadı. Masaüstündeki anti/demirbas-social/yerel-kopru/Baslat.command dosyasını çalıştırın veya B seçeneğindeki Köprüsüz Canlı Çekim'i kullanın.\n\nDetay: " + err.message);
+    alert("Yerel köprü sunucusuna ulaşılamadı. Masaüstündeki anti/demirbas-social/Baslat.command dosyasını çalıştırın veya Yüzen Panel (v2.6) seçeneğini kullanın.\n\nDetay: " + err.message);
   }
 });
 
-$("copyScannerScriptBtn").addEventListener("click", async () => {
-  const code = buildBrowserLiveScannerScript();
-  await navigator.clipboard.writeText(code).catch(() => {});
-  notify("Canlı tarama kodu kopyalandı! instagram.com sekmesinde çalıştırıp veriyi buraya yapıştırın.");
-});
+$("copyScannerScriptBtn").addEventListener("click", copyFloatingPanelCode);
 
 $("pasteLiveJsonBtn").addEventListener("click", async () => {
   try {
     const txt = await navigator.clipboard.readText();
-    const parsed = JSON.parse(txt);
-    if (Array.isArray(parsed.followers) && Array.isArray(parsed.following)) {
+    if (importImportedPayloadOrText(txt)) {
       $("method2Modal").style.display = "none";
-      applyNewSnapshot(parsed);
       return;
     }
-    alert("Panoda geçerli bir tarama çıktısı bulunamadı.");
+    alert("Panoda geçerli bir tarama çıktısı veya kullanıcı listesi bulunamadı.");
   } catch {
-    alert("Panoya erişilemedi; JSON metnini aşağıdaki kutuya elle yapıştırıp 'Yapıştırılan Veriyi Analiz Et' butonuna basabilirsin.");
+    alert("Panoya erişilemedi; veriyi aşağıdaki kutuya yapıştırıp 'Yapıştırılan Veriyi Analiz Et' butonuna basabilirsin.");
   }
 });
 
 $("importManualJsonBtn").addEventListener("click", () => {
-  try {
-    const parsed = JSON.parse($("manualJsonPaste").value.trim());
-    if (Array.isArray(parsed.followers) && Array.isArray(parsed.following)) {
-      $("method2Modal").style.display = "none";
-      $("manualJsonPaste").value = "";
-      applyNewSnapshot(parsed);
-    } else {
-      alert("Geçerli format bulunamadı.");
-    }
-  } catch {
-    alert("Geçersiz JSON metni.");
+  if (importImportedPayloadOrText($("manualJsonPaste").value)) {
+    $("method2Modal").style.display = "none";
+    $("manualJsonPaste").value = "";
+  } else {
+    alert("Geçerli JSON veya kullanıcı adı listesi bulunamadı.");
   }
 });
 
@@ -939,8 +1259,8 @@ $("semiDoneBtn").addEventListener("click", () => {
 });
 
 $("copyQueueScriptBtn").addEventListener("click", async () => {
-  await navigator.clipboard.writeText($("generatedQueueScript").value).catch(() => {});
-  notify("Korumalı kuyruk kodu kopyalandı!");
+  await copyTextSafe($("generatedQueueScript").value);
+  notify("GraphQL kuyruk kodu panoya kopyalandı!");
 });
 $("markScriptDoneBtn").addEventListener("click", () => {
   removeUnfollowedLocally(ui.pendingScriptUsers.map((u) => u.username));
@@ -948,69 +1268,13 @@ $("markScriptDoneBtn").addEventListener("click", () => {
   notify("Seçilen hesaplar takip edilenler listesinden düşürüldü.");
 });
 
-function updateExploreMetrics(tabs) {
-  const fCnt = store.followers.length;
-  const gCnt = store.following.length;
-  const nbCnt = tabs.notback.length;
-  const day = new Date().getDay();
-  const bestSlots = {
-    0: ["19:30", "Pazar akşam akışı"],
-    1: ["20:00", "Pazartesi prime-time"],
-    2: ["20:30", "Salı yüksek kaydetme saati"],
-    3: ["21:00", "Çarşamba Reels zirvesi"],
-    4: ["20:30", "Perşembe etkileşim saati"],
-    5: ["18:30", "Cuma akşamüstü geçişi"],
-    6: ["19:00", "Cumartesi keşfet saati"]
-  };
-  const slot = bestSlots[day] || ["20:30", "Prime-time"];
-  if ($("bestHourVal")) $("bestHourVal").textContent = slot[0];
-  if ($("bestHourHint")) $("bestHourHint").textContent = slot[1];
-
-  if (fCnt > 0 && gCnt > 0) {
-    const curR = (fCnt / gCnt).toFixed(2);
-    const afterFollow = Math.max(1, gCnt - nbCnt);
-    const targetR = (fCnt / afterFollow).toFixed(2);
-    $("curRatioVal").textContent = curR + "x";
-    $("targetRatioVal").textContent = targetR + "x";
-    $("ratioBadge").textContent = `OTORİTE ORANI: ${curR}x → ${targetR}x`;
-  }
-}
-
-function calculateExploreScore() {
-  const baseFollowers = Math.max(1, store.followers.length || 334);
-  const likes = Number($("calcLikes").value || 0);
-  const comments = Number($("calcComments").value || 0);
-  const saves = Number($("calcSaves").value || 0);
-  const weighted = likes + comments * 2 + saves * 3;
-  const rawEr = ((likes + comments + saves) / baseFollowers) * 100;
-  const saveRatio = ((saves / baseFollowers) * 100).toFixed(1);
-
-  $("erPercentVal").textContent = "%" + rawEr.toFixed(1);
-  let grade = "Orta";
-  let tip = "";
-  if (rawEr >= 12) {
-    grade = "🔥 Keşfet Adayı";
-    tip = `Harika! %${rawEr.toFixed(1)} etkileşim oranı ve %${saveRatio} kaydetme/paylaşım hızı Keşfet eşiğinin üzerinde. İlk 3 saniyede net kanca (hook) cümlesiyle ${$("bestHourVal").textContent} saatinde Reels paylaşımı önerilir.`;
-  } else if (rawEr >= 5) {
-    grade = "✓ Sağlam Organik";
-    tip = `%${rawEr.toFixed(1)} etkileşim oranı sağlıklı. Keşfet'e sıçramak için açıklama sonunda soru sorup kaydetmeye değer mini liste/ipucu formatı kullan (Ağırlıklı Skor: ${weighted}).`;
-  } else {
-    grade = "⚡ Yükseltilebilir";
-    tip = `Etkileşim oranı %${rawEr.toFixed(1)}. Geri takip etmeyen ve etkileşimsiz hesapları temizleyip ilk 2 saniyede merak uyandıran Reels başlığı kullanmak erişimi hızla artırır.`;
-  }
-  $("erGradeHint").textContent = grade;
-  const box = $("exploreAdviceBox");
-  box.style.display = "block";
-  box.innerHTML = `<strong style="color:var(--orange2);font-size:12.5px;">${grade} (${baseFollowers} takipçi baz alındı)</strong><p style="font-size:12px;color:#cbd5e1;margin:6px 0 0;line-height:1.55;">${tip}</p>`;
-}
-
-if ($("calcExploreBtn")) {
-  $("calcExploreBtn").addEventListener("click", calculateExploreScore);
-}
-
 $("qPauseBtn").addEventListener("click", () => bridgeFetch("/api/queue/control", { action: "pause" }).catch(() => {}));
 $("qResumeBtn").addEventListener("click", () => bridgeFetch("/api/queue/control", { action: "resume" }).catch(() => {}));
-$("qClearBtn").addEventListener("click", () => bridgeFetch("/api/queue/control", { action: "clear" }).catch(() => {}));
+$("qClearBtn").addEventListener("click", () => {
+  ui.dismissedDoneStamp = $("qClearBtn").dataset.stamp || "dismissed";
+  $("queueCard").style.display = "none";
+  bridgeFetch("/api/queue/control", { action: "clear" }).catch(() => {});
+});
 
 renderAll();
 startBridgePolling();

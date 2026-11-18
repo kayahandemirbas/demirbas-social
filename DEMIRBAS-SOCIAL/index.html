@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111111">
+  <meta name="description" content="DEMİRBAŞ SOCIAL — kişisel sosyal medya analiz merkezi">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <title>DEMİRBAŞ SOCIAL</title>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">D</span><div><strong>DEMİRBAŞ <em>SOCIAL</em></strong><small>SOCIAL INTELLIGENCE</small></div></div>
+    <span class="local-pill"><i></i> Cihazında çalışır</span>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="eyebrow">KİŞİSEL ANALİZ MERKEZİ</p>
+      <h1>Sosyal çevreni<br><span>veriyle keşfet.</span></h1>
+      <p class="sub">Instagram veri arşivini yükle, takipçi hareketlerini karşılaştır ve raporunu oluştur.</p>
+      <div class="actions">
+        <label class="primary-btn" for="fileInput">Veri dosyası yükle <b>＋</b></label>
+        <input id="fileInput" type="file" accept=".json,.html,.htm,.csv,.txt" multiple hidden>
+        <button class="secondary-btn" id="demoBtn">Demo veriyi dene</button>
+      </div>
+      <p class="privacy-note">🔒 İlk sürümde dosyaların bu tarayıcıda işlenir; sunucuya gönderilmez.</p>
+    </section>
+
+    <section class="stats">
+      <article class="stat-card"><span>TAKİPÇİ</span><strong id="followersCount">—</strong><small id="followersHint">Henüz veri yok</small></article>
+      <article class="stat-card"><span>TAKİP EDİLEN</span><strong id="followingCount">—</strong><small id="followingHint">Henüz veri yok</small></article>
+      <article class="stat-card accent-card"><span>SENİ TAKİP ETMEYEN</span><strong id="notFollowingBack">—</strong><small>Takip ettiklerin arasından</small></article>
+      <article class="stat-card"><span>KARŞILIKLI TAKİP</span><strong id="mutualCount">—</strong><small>İki listede de bulunanlar</small></article>
+    </section>
+
+    <section class="panel">
+      <div class="section-head"><div><p class="eyebrow">ANALİZ ARAÇLARI</p><h2>Takipçi karşılaştırması</h2></div><span class="tag">V1.0 · MVP</span></div>
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="notback">Seni takip etmeyenler <span id="notbackTabCount">0</span></button>
+        <button class="tab" data-tab="fans">Senin takip etmediklerin <span id="fansTabCount">0</span></button>
+        <button class="tab" data-tab="mutual">Karşılıklı <span id="mutualTabCount">0</span></button>
+      </div>
+      <div class="list-toolbar"><input id="searchInput" type="search" placeholder="Kullanıcı adı ara…"><button id="exportBtn" class="export-btn">CSV dışa aktar ↓</button></div>
+      <div id="resultList" class="result-list"><div class="empty"><span>◎</span><strong>Henüz analiz yapılmadı</strong><p>Instagram veri arşivinden takipçi ve takip edilen listelerini yükle.</p></div></div>
+      <p class="footnote">Not: Bu araç Instagram hesabına giriş yapmaz, şifre veya oturum bilgisi istemez. Liste karşılaştırması, Instagram'dan indirdiğin kendi veri arşivine dayanır.</p>
+    </section>
+
+    <section class="howto">
+      <p class="eyebrow">NASIL BAŞLANIR?</p>
+      <h2>Instagram verini dışa aktar</h2>
+      <ol>
+        <li>Instagram → Hesaplar Merkezi → Bilgilerin ve izinlerin.</li>
+        <li>Bilgilerini indir → Bilgileri indir veya aktar.</li>
+        <li>Takipçiler ve takip edilenler verilerini seç; mümkünse JSON biçimini kullan.</li>
+        <li>İndirdiğin dosyaları yukarıdaki alandan yükle.</li>
+      </ol>
+      <p class="footnote">Instagram arayüzündeki menü adları sürüme göre değişebilir. İndirme arşivindeki dosya yapısı farklıysa dosyaları inceleyip içe aktarıcıyı uyarlayabiliriz.</p>
+    </section>
+  </main>
+  <footer>DEMİRBAŞ SOCIAL <span>·</span> Kişisel veri kontrolü sende.</footer>
+  <script src="app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(()=>{}));
+  </script>
+</body>
+</html>
